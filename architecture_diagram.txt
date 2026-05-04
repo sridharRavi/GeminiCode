@@ -1,0 +1,15 @@
+User Query
+   ↓
+FastAPI Backend
+   ↓
+Code Parser → Chunking (function/class level)
+   ↓
+Embedding Model
+   ↓
+Vector Database (FAISS / Pinecone)
+   ↓
+Retriever (Top-K relevant chunks)
+   ↓
+LLM (Gemini / OpenAI)
+   ↓
+Response
