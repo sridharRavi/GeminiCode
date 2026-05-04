@@ -159,6 +159,44 @@ def generate_tests(function_name, output_dir="generated_tests", top_k=3):
 
     return f"Could not find a function named `{function_name}` in the codebase."
 
+def find_similar_code(query, top_k=3):
+    embedding = model.encode([query])
+    D, I = index.search(np.array(embedding), top_k)
+
+    results = []
+    for i in I[0]:
+        results.append(texts[i])
+
+    return "\n\n---\n\n".join(results)
+
+def trace_function_calls(function_name, top_k=5):
+    query = f"Where is `{function_name}` used or called?"
+    return query_assistant(query, top_k)
+
+def find_bugs(function_name, top_k=3):
+    embedding = model.encode([function_name])
+    D, I = index.search(np.array(embedding), top_k)
+
+    for i in I[0]:
+        chunk = texts[i]
+        if f"def {function_name}" in chunk:
+            prompt = (
+                "You are a senior Python engineer.\n\n"
+                "Analyze the following function for bugs, edge cases, or bad practices.\n\n"
+                f"```python\n{chunk}\n```\n\n"
+                "List potential issues and improvements:"
+            )
+
+            response = genai.GenerativeModel("gemini-2.5-flash").generate_content(prompt)
+            return response.text.strip()
+
+    return f"Function `{function_name}` not found."
+
+def summarize_file(file_name, top_k=5):
+    query = f"Summarize the purpose of file {file_name}"
+    return query_assistant(query, top_k)
+
+
 explain_function_tool = Tool(
     name = "ExplainFunction",
     func=explain_function,
@@ -183,10 +221,36 @@ generate_tests_tool = Tool(
     description="Write pyTest test files for the python files in the codebase"
 )
 
+find_similar_code_tool = Tool(
+    name="FindSimilarCode",
+    func=find_similar_code,
+    description="Finds similar code snippets in the codebase based on a query"
+)
+
+trace_function_calls_tool = Tool(
+    name="TraceFunctionCall",
+    func=trace_function_calls,
+    description="trace to the point where the functio is called"
+)
+
+find_bugs_tool = Tool(
+    name="FindBugs",
+    func=find_bugs,
+    description="Find bugs in the code base and print them"
+)
+
+summarize_file_tool = Tool(
+    name="SummarizeFile",
+    func=summarize_file,
+    description="Summarize the file structure and architecture present in the codebase"
+)
+
+
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
 agent = initialize_agent(
-    tools=[explain_function_tool, refactor_code_tool, fetch_pypi_info_tool, generate_tests_tool],
+    tools=[explain_function_tool, refactor_code_tool, fetch_pypi_info_tool, generate_tests_tool,
+           find_similar_code_tool, find_bugs_tool, summarize_file_tool],
     llm=llm,
     agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
     verbose=True,
@@ -203,7 +267,11 @@ if __name__ == "__main__":
     print(" - refactor <function_name>")
     print(" - tests <file_name>  ")
     print(" - pypy <package_name> ")
+    print("bugs in codebase - find bugs in your files")
+    print("Trace function calls using trace <function_name>")
     print(" - Or ask a general question about the codebase.")
+    print(" - trace <function_name>")
+    print(" - summary <file_name>")
     print(" - Type 'exit' or 'quit' to leave.\n")
 
     while True:
@@ -224,6 +292,18 @@ if __name__ == "__main__":
             elif user_input.startswith("tests "):
                 func_name = user_input[len("tests "):].strip()
                 print("\n" + generate_tests(func_name) + "\n")
+            elif user_input.startswith("similar "):
+                query = user_input[len("similar "):].strip()
+                print("\n" + find_similar_code(query) + "\n")
+            elif user_input.startswith("bugs "):
+                func_name = user_input[len("bugs "):].strip()
+                print("\n" + find_bugs(func_name) + "\n")
+            elif user_input.startswith("trace "):
+                func_name = user_input[len("trace "):].strip()
+                print("\n" + trace_function_calls(func_name) + "\n")
+            elif user_input.startswith("summary "):
+                file_name = user_input[len("summary "):].strip()
+                print("\n" + summarize_file(file_name) + "\n")
             else:
                 print("\n" + query_assistant(user_input) + "\n")
         except KeyboardInterrupt:
